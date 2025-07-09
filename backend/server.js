@@ -6,13 +6,14 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const { body, validationResult } = require('express-validator');
 const connectDB = require('./config/database');
-const User = require('./models/User');
+const User = require('./models/User-simple-working');
 const Post = require('./models/Post');
 const PasswordReset = require('./models/PasswordReset');
 const upload = require('./middleware/upload');
 const { sendOTPEmail, generateOTP } = require('./services/emailService');
 const path = require('path');
 const crypto = require('crypto');
+const postRoutes = require('./routes/posts');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -117,7 +118,8 @@ app.post('/api/auth/register', validateRegistration, async (req, res) => {
       user: {
         id: newUser._id,
         username: newUser.username,
-        email: newUser.email
+        email: newUser.email,
+        createdAt: newUser.createdAt
       }
     });
   } catch (error) {
@@ -161,7 +163,8 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
       user: {
         id: user._id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        createdAt: user.createdAt
       }
     });
   } catch (error) {
@@ -173,39 +176,65 @@ app.post('/api/auth/login', validateLogin, async (req, res) => {
 // Change password
 app.post('/api/auth/change-password', authenticateToken, validatePasswordChange, async (req, res) => {
   try {
+    console.log('Password change request received');
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
     const { currentPassword, newPassword } = req.body;
     const userId = req.user.userId;
+    
+    console.log('User ID:', userId);
+    console.log('Current password provided:', !!currentPassword);
+    console.log('New password provided:', !!newPassword);
 
     // Find user
     const user = await User.findById(userId);
     if (!user) {
+      console.log('User not found');
       return res.status(404).json({ message: 'User not found' });
     }
+    
+    console.log('User found:', user.username);
 
     // Verify current password
+    console.log('Verifying current password...');
     const isValidCurrentPassword = await user.comparePassword(currentPassword);
     if (!isValidCurrentPassword) {
+      console.log('Current password is incorrect');
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
+    
+    console.log('Current password verified');
 
-    // Check if new password is in history
+    // Check if new password is in history (simplified)
+    console.log('Checking password history...');
     const isInHistory = await user.isPasswordInHistory(newPassword);
     if (isInHistory) {
-      return res.status(400).json({ message: 'New password cannot be one of the last 3 passwords used' });
+      console.log('New password is in history');
+      return res.status(400).json({ message: 'give valid pass' });
     }
+    console.log('Password not in history');
 
     // Update password
+    console.log('Updating password...');
+    const oldHash = user.password;
     user.password = newPassword;
+    if (!user.passwordHistory) user.passwordHistory = [];
+    user.passwordHistory.unshift(oldHash);
+    if (user.passwordHistory.length > 3) {
+      user.passwordHistory = user.passwordHistory.slice(0, 3);
+    }
     await user.save();
+    console.log('Password updated successfully');
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
     console.error('Password change error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -297,16 +326,65 @@ app.post('/api/auth/reset-password', async (req, res) => {
     console.log('Valid OTP found');
 
     // Check if new password is in history
-    const isInHistory = await user.isPasswordInHistory(newPassword);
-    if (isInHistory) {
-      console.log('New password is in history');
-      return res.status(400).json({ message: 'New password cannot be one of the last 3 passwords used' });
+    try {
+      console.log('Checking password history for reset...');
+      console.log('Current password history:', user.getPasswordHistory());
+      const isInHistory = await user.isPasswordInHistory(newPassword);
+      if (isInHistory) {
+        console.log('New password is in history');
+        return res.status(400).json({ message: 'give valid pass' });
+      }
+      console.log('Password not in history');
+    } catch (error) {
+      console.error('Error checking password history:', error);
+      // Continue with password reset even if history check fails
     }
 
     // Update password
-    user.password = newPassword;
-    await user.save();
-    console.log('Password updated successfully');
+    console.log('Updating password for user:', user.username);
+    console.log('User before update:', {
+      id: user._id,
+      username: user.username,
+      hasPassword: !!user.password,
+      passwordLength: user.password ? user.password.length : 0,
+      passwordHistoryCount: user.passwordHistory ? user.passwordHistory.length : 0
+    });
+    
+    try {
+      const oldHash = user.password;
+      user.password = newPassword;
+      if (!user.passwordHistory) user.passwordHistory = [];
+      user.passwordHistory.unshift(oldHash);
+      if (user.passwordHistory.length > 3) {
+        user.passwordHistory = user.passwordHistory.slice(0, 3);
+      }
+      console.log('Password set to new value, length:', newPassword.length);
+      
+      await user.save();
+      console.log('Password updated successfully');
+      console.log('User after update:', {
+        id: user._id,
+        username: user.username,
+        hasPassword: !!user.password,
+        passwordLength: user.password ? user.password.length : 0,
+        passwordHistoryCount: user.passwordHistory ? user.passwordHistory.length : 0
+      });
+    } catch (saveError) {
+      console.error('Error saving password:', saveError);
+      console.error('Save error details:', {
+        message: saveError.message,
+        name: saveError.name,
+        stack: saveError.stack
+      });
+      if (saveError.errors) {
+        console.error('Validation errors:', saveError.errors);
+      }
+      return res.status(500).json({ 
+        message: 'Failed to update password',
+        error: saveError.message,
+        details: saveError.errors
+      });
+    }
 
     // Mark OTP as used
     passwordReset.isUsed = true;
@@ -316,7 +394,19 @@ app.post('/api/auth/reset-password', async (req, res) => {
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    });
+    if (error.errors) {
+      console.error('Validation errors:', error.errors);
+    }
+    res.status(500).json({ 
+      message: 'Server error',
+      error: error.message,
+      details: error.errors
+    });
   }
 });
 
@@ -378,7 +468,9 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
       image: post.image,
       isPrivate: post.isPrivate,
       createdAt: post.createdAt,
-      updatedAt: post.updatedAt
+      updatedAt: post.updatedAt,
+      likes: post.likes,
+      comments: post.comments
     }));
 
     res.json(formattedPosts);
@@ -575,6 +667,73 @@ app.post('/api/auth/test-reset', async (req, res) => {
     res.status(500).json({ message: 'Server error. Please try again later.' });
   }
 });
+
+// Test endpoint to check user's password history
+app.get('/api/test/password-history/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json({
+      userId: user._id,
+      username: user.username,
+      passwordHistory: user.getPasswordHistory(),
+      passwordHistoryCount: user.passwordHistory ? user.passwordHistory.length : 0
+    });
+  } catch (error) {
+    console.error('Error getting password history:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Test endpoint to manually change password (for debugging)
+app.post('/api/test/change-password/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { newPassword } = req.body;
+    
+    if (!newPassword) {
+      return res.status(400).json({ message: 'New password is required' });
+    }
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    console.log('Test password change for user:', user.username);
+    console.log('Current password history:', user.getPasswordHistory());
+    
+    // Check if password is in history
+    const isInHistory = await user.isPasswordInHistory(newPassword);
+    console.log('Is password in history?', isInHistory);
+    
+    if (isInHistory) {
+      return res.status(400).json({ message: 'Password is in history' });
+    }
+    
+    // Update password
+    user.password = newPassword;
+    await user.save();
+    
+    console.log('Password updated successfully');
+    console.log('Updated password history:', user.getPasswordHistory());
+    
+    res.json({ 
+      message: 'Password changed successfully',
+      passwordHistory: user.getPasswordHistory()
+    });
+  } catch (error) {
+    console.error('Test password change error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+app.use('/api/posts', postRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

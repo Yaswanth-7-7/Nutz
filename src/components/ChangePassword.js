@@ -26,14 +26,27 @@ const ChangePassword = () => {
     
     if (success) {
       reset();
-      navigate('/dashboard');
+      navigate('/profile');
     }
+  };
+
+  const handleBackToProfile = () => {
+    navigate('/profile');
   };
 
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h2>Change Password</h2>
+        <div className="auth-header">
+          <button 
+            onClick={handleBackToProfile}
+            className="back-button"
+            type="button"
+          >
+            ← Back to Profile
+          </button>
+          <h2>Change Password</h2>
+        </div>
         <form onSubmit={handleSubmit(onSubmit)} className="auth-form">
           <div className="form-group">
             <label htmlFor="currentPassword">Current Password</label>

@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const User = require('../models/User-simple-working');
 const PasswordReset = require('../models/PasswordReset');
 const { sendOTPEmail, generateOTP } = require('../services/emailService');
 const router = express.Router();
@@ -26,7 +26,10 @@ router.post('/register', async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      passwordHistory: [hashedPassword]
+      passwordHistory: [{
+        password: hashedPassword,
+        createdAt: new Date()
+      }]
     });
 
     await user.save();
@@ -179,10 +182,10 @@ router.post('/reset-password', async (req, res) => {
 
     // Check password history (last 3 passwords)
     const passwordHistory = user.passwordHistory.slice(-3);
-    for (const oldPassword of passwordHistory) {
-      const isOldPassword = await bcrypt.compare(newPassword, oldPassword);
+    for (const historyItem of passwordHistory) {
+      const isOldPassword = await bcrypt.compare(newPassword, historyItem.password);
       if (isOldPassword) {
-        return res.status(400).json({ message: 'Cannot reuse any of your last 3 passwords' });
+        return res.status(400).json({ message: 'give valid pass' });
       }
     }
 
@@ -192,11 +195,14 @@ router.post('/reset-password', async (req, res) => {
 
     // Update user password
     user.password = hashedNewPassword;
-    user.passwordHistory.push(hashedNewPassword);
+    user.passwordHistory.push({
+      password: hashedNewPassword,
+      createdAt: new Date()
+    });
     
-    // Keep only last 5 passwords in history
-    if (user.passwordHistory.length > 5) {
-      user.passwordHistory = user.passwordHistory.slice(-5);
+    // Keep only last 3 passwords in history
+    if (user.passwordHistory.length > 3) {
+      user.passwordHistory = user.passwordHistory.slice(-3);
     }
 
     await user.save();
@@ -238,10 +244,10 @@ router.post('/change-password', async (req, res) => {
 
     // Check password history (last 3 passwords)
     const passwordHistory = user.passwordHistory.slice(-3);
-    for (const oldPassword of passwordHistory) {
-      const isOldPassword = await bcrypt.compare(newPassword, oldPassword);
+    for (const historyItem of passwordHistory) {
+      const isOldPassword = await bcrypt.compare(newPassword, historyItem.password);
       if (isOldPassword) {
-        return res.status(400).json({ message: 'Cannot reuse any of your last 3 passwords' });
+        return res.status(400).json({ message: 'give valid pass' });
       }
     }
 
@@ -251,11 +257,14 @@ router.post('/change-password', async (req, res) => {
 
     // Update user password
     user.password = hashedNewPassword;
-    user.passwordHistory.push(hashedNewPassword);
+    user.passwordHistory.push({
+      password: hashedNewPassword,
+      createdAt: new Date()
+    });
     
-    // Keep only last 5 passwords in history
-    if (user.passwordHistory.length > 5) {
-      user.passwordHistory = user.passwordHistory.slice(-5);
+    // Keep only last 3 passwords in history
+    if (user.passwordHistory.length > 3) {
+      user.passwordHistory = user.passwordHistory.slice(-3);
     }
 
     await user.save();

@@ -14,6 +14,8 @@ const Dashboard = () => {
   const [editContent, setEditContent] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [commentText, setCommentText] = useState({});
+  const [comments, setComments] = useState({});
 
   useEffect(() => {
     fetchPosts();
@@ -127,6 +129,60 @@ const Dashboard = () => {
     return new Date(dateString).toLocaleString();
   };
 
+  const handleLike = async (postId) => {
+    try {
+      await axios.post(`/posts/${postId}/like`, { userId: user.id });
+      fetchPosts();
+    } catch (error) {
+      toast.error('Failed to like post');
+    }
+  };
+
+  const handleUnlike = async (postId) => {
+    try {
+      await axios.post(`/posts/${postId}/unlike`, { userId: user.id });
+      fetchPosts();
+    } catch (error) {
+      toast.error('Failed to unlike post');
+    }
+  };
+
+  const handleAddComment = async (postId) => {
+    if (!commentText[postId] || !commentText[postId].trim()) {
+      toast.error('Please enter a comment');
+      return;
+    }
+    try {
+      await axios.post(`/posts/${postId}/comment`, { userId: user.id, text: commentText[postId] });
+      setCommentText((prev) => ({ ...prev, [postId]: '' }));
+      fetchComments(postId);
+    } catch (error) {
+      toast.error('Failed to add comment');
+    }
+  };
+
+  const fetchComments = async (postId) => {
+    try {
+      const res = await axios.get(`/posts/${postId}/comments`);
+      setComments((prev) => ({ ...prev, [postId]: res.data }));
+    } catch (error) {
+      toast.error('Failed to fetch comments');
+    }
+  };
+
+  const handleDeleteComment = async (postId, commentIdx) => {
+    try {
+      await axios.delete(`/posts/${postId}/comment/${commentIdx}`, { data: { userId: user.id } });
+      fetchComments(postId);
+    } catch (error) {
+      toast.error('Failed to delete comment');
+    }
+  };
+
+  if (!user) {
+    return <div>Loading...</div>;
+  }
+
   return (
     <div className="dashboard">
       <div className="dashboard-header">
@@ -207,7 +263,7 @@ const Dashboard = () => {
         ) : (
           <div className="posts-list">
             {posts.map((post) => (
-              <div key={post.id} className="post-card">
+              <div key={post.id || post._id} className="post-card" style={{ maxWidth: 500, margin: '24px auto', padding: 20, borderRadius: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', background: '#fff' }}>
                 <div className="post-header">
                   <div className="post-info">
                     <h3 className="post-author">{post.username}</h3>
@@ -269,6 +325,42 @@ const Dashboard = () => {
                     )}
                   </div>
                 )}
+                <div className="post-actions" style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, marginBottom: 8 }}>
+                  <button
+                    onClick={() => post.likes && post.likes.includes(user.id) ? handleUnlike(post._id || post.id) : handleLike(post._id || post.id)}
+                    style={{ fontSize: 22, padding: '6px 16px', marginRight: 8, transition: 'background 0.2s', cursor: 'pointer', background: 'none', border: 'none' }}
+                    aria-label={post.likes && post.likes.includes(user.id) ? 'Unlike' : 'Like'}
+                  >
+                    {post.likes && post.likes.includes(user.id) ? '❤️' : '🤍'}
+                  </button>
+                  <span style={{ fontWeight: 'bold', fontSize: 16 }}>{post.likes ? post.likes.length : 0} likes</span>
+                </div>
+                <div className="post-comments" style={{ marginTop: 10, marginBottom: 18 }}>
+                  <button onClick={() => fetchComments(post._id || post.id)} style={{ marginBottom: 8 }}>
+                    Show Comments
+                  </button>
+                  <ul style={{ paddingLeft: 0, marginBottom: 8 }}>
+                    {(comments[post._id || post.id] || []).map((c, idx) => (
+                      <li key={idx} style={{ listStyle: 'none', marginBottom: 4 }}>
+                        <b>{c.user?.username || 'User'}:</b> {c.text}
+                        {c.user && (c.user._id === user.id || c.user === user.id) && (
+                          <button onClick={() => handleDeleteComment(post._id || post.id, idx)} style={{ marginLeft: 8 }}>
+                            Delete
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      value={commentText[post._id || post.id] || ''}
+                      onChange={e => setCommentText((prev) => ({ ...prev, [post._id || post.id]: e.target.value }))}
+                      placeholder="Add a comment"
+                      style={{ flex: 1, padding: 6 }}
+                    />
+                    <button onClick={() => handleAddComment(post._id || post.id)} style={{ padding: '6px 16px' }}>Comment</button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>

@@ -25,8 +25,8 @@ const Navbar = () => {
               <Link to="/dashboard" className="nav-link">
                 Dashboard
               </Link>
-              <Link to="/change-password" className="nav-link">
-                Change Password
+              <Link to="/profile" className="nav-link">
+                Profile
               </Link>
               <div className="user-info">
                 <span className="username">Welcome, {user?.username}!</span>

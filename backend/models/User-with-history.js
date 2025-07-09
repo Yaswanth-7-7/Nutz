@@ -43,26 +43,37 @@ const userSchema = new mongoose.Schema({
 // Hash password before saving
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
+  
   try {
     const saltRounds = 12;
     const oldPassword = this.password;
     const hashedPassword = await bcrypt.hash(this.password, saltRounds);
 
-    // Only add to history if not a new user and the old password looks like a hash
-    if (!this.isNew && oldPassword && typeof oldPassword === 'string' && oldPassword.length > 20) {
-      if (!this.passwordHistory) this.passwordHistory = [];
+    // Only add to history if this is not a new user and old password is a valid hash
+    if (!this.isNew && oldPassword && oldPassword.length > 20) {
+      // Initialize passwordHistory if it doesn't exist
+      if (!this.passwordHistory) {
+        this.passwordHistory = [];
+      }
+      
+      // Add old password to history
       this.passwordHistory.push({
         password: oldPassword,
         createdAt: new Date()
       });
+      
       // Keep only last 3 passwords
       if (this.passwordHistory.length > 3) {
         this.passwordHistory = this.passwordHistory.slice(-3);
       }
+      
+      console.log(`Added password to history. Total passwords in history: ${this.passwordHistory.length}`);
     }
+    
     this.password = hashedPassword;
     next();
   } catch (error) {
+    console.error('Error in pre-save middleware:', error);
     next(error);
   }
 });
@@ -77,6 +88,7 @@ userSchema.methods.isPasswordInHistory = async function(newPassword) {
   try {
     // Ensure passwordHistory exists and is an array
     if (!this.passwordHistory || !Array.isArray(this.passwordHistory)) {
+      console.log('No password history found');
       return false;
     }
     
@@ -91,7 +103,7 @@ userSchema.methods.isPasswordInHistory = async function(newPassword) {
       try {
         const isSame = await bcrypt.compare(newPassword, historyItem.password);
         if (isSame) {
-          console.log('Password found in history');
+          console.log('Password found in history - cannot reuse');
           return true;
         }
       } catch (error) {
@@ -101,7 +113,7 @@ userSchema.methods.isPasswordInHistory = async function(newPassword) {
       }
     }
     
-    console.log('Password not found in history');
+    console.log('Password not found in history - can use this password');
     return false;
   } catch (error) {
     console.error('Error in isPasswordInHistory:', error);
@@ -116,7 +128,8 @@ userSchema.methods.getPasswordHistory = function() {
   }
   return this.passwordHistory.map(item => ({
     createdAt: item.createdAt,
-    hasPassword: !!item.password
+    hasPassword: !!item.password,
+    passwordLength: item.password ? item.password.length : 0
   }));
 };
 

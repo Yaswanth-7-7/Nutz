@@ -15,6 +15,12 @@ const postSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  comments: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    text: String,
+    createdAt: { type: Date, default: Date.now }
+  }],
   isPrivate: {
     type: Boolean,
     default: false

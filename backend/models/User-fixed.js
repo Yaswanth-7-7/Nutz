@@ -43,26 +43,39 @@ const userSchema = new mongoose.Schema({
 // Hash password before saving
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
+  
   try {
     const saltRounds = 12;
     const oldPassword = this.password;
     const hashedPassword = await bcrypt.hash(this.password, saltRounds);
 
-    // Only add to history if not a new user and the old password looks like a hash
+    // Only add to history if not a new user and the old password is a valid hash
     if (!this.isNew && oldPassword && typeof oldPassword === 'string' && oldPassword.length > 20) {
-      if (!this.passwordHistory) this.passwordHistory = [];
-      this.passwordHistory.push({
-        password: oldPassword,
-        createdAt: new Date()
-      });
-      // Keep only last 3 passwords
-      if (this.passwordHistory.length > 3) {
-        this.passwordHistory = this.passwordHistory.slice(-3);
+      // Ensure passwordHistory is initialized
+      if (!this.passwordHistory) {
+        this.passwordHistory = [];
+      }
+      
+      // Only add if it's a valid hash (not plain text)
+      if (oldPassword.startsWith('$2a$') || oldPassword.startsWith('$2b$') || oldPassword.startsWith('$2y$')) {
+        this.passwordHistory.push({
+          password: oldPassword,
+          createdAt: new Date()
+        });
+        
+        // Keep only last 3 passwords
+        if (this.passwordHistory.length > 3) {
+          this.passwordHistory = this.passwordHistory.slice(-3);
+        }
+        
+        console.log(`Added password to history. Total: ${this.passwordHistory.length}`);
       }
     }
+    
     this.password = hashedPassword;
     next();
   } catch (error) {
+    console.error('Error in pre-save middleware:', error);
     next(error);
   }
 });
@@ -116,7 +129,8 @@ userSchema.methods.getPasswordHistory = function() {
   }
   return this.passwordHistory.map(item => ({
     createdAt: item.createdAt,
-    hasPassword: !!item.password
+    hasPassword: !!item.password,
+    passwordLength: item.password ? item.password.length : 0
   }));
 };
 
